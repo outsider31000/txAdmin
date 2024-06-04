@@ -6,7 +6,6 @@ export { default as liveConsole } from './liveConsole.js';
 export { default as resources } from './resources.js';
 export { default as chartData } from './chartData.js';
 export { default as systemLog } from './systemLog.js';
-export { default as databaseActions } from './databaseActions';
 
 export { default as auth_addMasterPin } from './authentication/addMasterPin.js';
 export { default as auth_addMasterCallback } from './authentication/addMasterCallback.js';
@@ -45,6 +44,11 @@ export { default as fxserver_commands } from './fxserver/commands';
 export { default as fxserver_controls } from './fxserver/controls';
 export { default as fxserver_downloadLog } from './fxserver/downloadLog';
 export { default as fxserver_schedule } from './fxserver/schedule';
+
+export { default as history_stats } from './history/stats';
+export { default as history_search } from './history/search';
+export { default as history_actionModal } from './history/actionModal';
+export { default as history_actions } from './history/actions.js';
 
 export { default as player_stats } from './player/stats';
 export { default as player_search } from './player/search';

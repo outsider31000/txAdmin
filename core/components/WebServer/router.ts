@@ -100,7 +100,6 @@ export default (config: WebServerConfigType) => {
     //Data routes
     router.get('/serverLog/partial', apiAuthMw, webRoutes.serverLogPartial);
     router.get('/chartData/:thread?', chartDataLimiter, webRoutes.chartData);
-    router.post('/database/:action', apiAuthMw, webRoutes.databaseActions);
 
     /*
         FIXME: reorganizar TODAS rotas de logs, incluindo listagem e download
@@ -109,6 +108,12 @@ export default (config: WebServerConfigType) => {
         /logs/:log/partial - API
         /logs/:log/download - WEB
     */
+
+    //History routes
+    router.get('/history/stats', apiAuthMw, webRoutes.history_stats);
+    router.get('/history/search', apiAuthMw, webRoutes.history_search);
+    router.get('/history/action', apiAuthMw, webRoutes.history_actionModal);
+    router.post('/history/:action', apiAuthMw, webRoutes.history_actions);
 
     //Player routes
     router.get('/player', apiAuthMw, webRoutes.player_modal);

@@ -7,6 +7,7 @@ import cleanPlayerName from '@shared/cleanPlayerName';
 import { chain as createChain } from 'lodash-es';
 import Fuse from 'fuse.js';
 import { parseLaxIdsArrayInput } from '@extras/helpers';
+import { TimeCounter } from '@core/components/StatisticsManager/statsUtils';
 const console = consoleFactory(modulename);
 
 //Helpers
@@ -34,11 +35,11 @@ export default async function PlayerSearch(ctx: AuthedCtx) {
         offsetLicense
     } = ctx.query;
     const sendTypedResp = (data: PlayersTableSearchResp) => ctx.send(data);
+    const searchTime = new TimeCounter();
     const adminsIdentifiers = ctx.txAdmin.adminVault.getAdminsIdentifiers();
     const onlinePlayersLicenses = ctx.txAdmin.playerlistManager.getOnlinePlayersLicenses();
     const dbo = ctx.txAdmin.playerDatabase.getDb();
     let chain = dbo.chain.get('players');
-
     /*
         In order:
         - [X] sort the players by the sortingKey/sortingDesc
@@ -131,9 +132,9 @@ export default async function PlayerSearch(ctx: AuthedCtx) {
             chain = createChain(filtered);
         } else if (searchType === 'playerIds') {
             //Searching by player identifiers
-            const { validIds, validHwids, invalidIds } = parseLaxIdsArrayInput(searchValue);
-            if (invalidIds.length) {
-                return sendTypedResp({ error: `Invalid identifiers (${invalidIds.join(',')}). Prefix any identifier with their type, like 'fivem:123456' instead of just '123456'.` });
+            const { validIds, validHwids, invalids } = parseLaxIdsArrayInput(searchValue);
+            if (invalids.length) {
+                return sendTypedResp({ error: `Invalid identifiers (${invalids.join(',')}). Prefix any identifier with their type, like 'fivem:123456' instead of just '123456'.` });
             }
             if (!validIds.length && !validHwids.length) {
                 return sendTypedResp({ error: `No valid identifiers found.` });
@@ -175,6 +176,7 @@ export default async function PlayerSearch(ctx: AuthedCtx) {
         };
     });
 
+    ctx.txAdmin.statisticsManager.playersTableSearchTime.count(searchTime.stop().milliseconds);
     return sendTypedResp({
         players: processedPlayers,
         hasReachedEnd,

@@ -1,11 +1,10 @@
 import { throttle } from "throttle-debounce";
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronsUpDownIcon, FilterXIcon, XIcon, ChevronDownIcon, ExternalLinkIcon } from 'lucide-react';
+import { ChevronsUpDownIcon, XIcon, ChevronDownIcon, ExternalLinkIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
     DropdownMenu,
-    DropdownMenuCheckboxItem,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuLabel,
@@ -14,9 +13,18 @@ import {
     DropdownMenuSeparator, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import InlineCode from '@/components/InlineCode';
-import { PlayersTableFiltersType, PlayersTableSearchType } from "@shared/playerApiTypes";
 import { useEventListener } from "usehooks-ts";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/auth"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectSeparator,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select"
+import { HistoryTableSearchType } from "@shared/historyApiTypes";
 
 
 /**
@@ -24,33 +32,26 @@ import { Link } from "wouter";
  */
 const availableSearchTypes = [
     {
-        value: 'playerName',
-        label: 'Name',
-        placeholder: 'Enter a player name',
-        description: 'Search players by their last display name.'
+        value: 'actionId',
+        label: 'Action ID',
+        placeholder: 'XXXX-XXXX',
+        description: 'Search actions by their ID.'
     },
     {
-        value: 'playerNotes',
-        label: 'Notes',
-        placeholder: 'Enter part of the note to search for',
-        description: 'Search players by their profile notes contents.'
+        value: 'reason',
+        label: 'Reason',
+        placeholder: 'Enter part of the reason to search for',
+        description: 'Search actions by their reason contents.'
     },
     {
-        value: 'playerIds',
+        value: 'identifiers',
         label: 'Player IDs',
         placeholder: 'License, Discord, Steam, etc.',
-        description: 'Search players by their IDs separated by a comma.'
+        description: 'Search actions by their player IDs separated by a comma.'
     },
 ] as const;
 
-const availableFilters = [
-    { label: 'Is Admin', value: 'isAdmin' },
-    { label: 'Is Online', value: 'isOnline' },
-    // { label: 'Is Banned', value: 'isBanned' },
-    // { label: 'Has Previous Ban', value: 'hasPreviousBan' },
-    { label: 'Has Whitelisted ID', value: 'isWhitelisted' },
-    { label: 'Has Profile Notes', value: 'hasNote' },
-] as const;
+const SEARCH_ANY_STRING = '!any';
 
 //FIXME: this doesn't require exporting, but HMR doesn't work without it
 // eslint-disable-next-line @typescript-eslint/no-explicit-any, react-refresh/only-export-components
@@ -63,38 +64,54 @@ export const throttleFunc = throttle(1250, (func: any) => {
 /**
  * Component
  */
-export type PlayersSearchBoxReturnStateType = {
-    search: PlayersTableSearchType;
-    filters: PlayersTableFiltersType;
+export type HistorySearchBoxReturnStateType = {
+    search: HistoryTableSearchType;
+    filterbyType?: string;
+    filterbyAdmin?: string;
 }
 
-type PlayerSearchBoxProps = {
-    doSearch: (search: PlayersTableSearchType, filters: PlayersTableFiltersType) => void;
-    initialState: PlayersSearchBoxReturnStateType;
+type HistorySearchBoxProps = {
+    doSearch: (search: HistoryTableSearchType, filterbyType: string | undefined, filterbyAdmin: string | undefined) => void;
+    initialState: HistorySearchBoxReturnStateType;
+    adminStats: {
+        name: string;
+        actions: number;
+    }[];
 };
 
-export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps) {
+export function HistorySearchBox({ doSearch, initialState, adminStats }: HistorySearchBoxProps) {
+    const { authData } = useAuth();
     const inputRef = useRef<HTMLInputElement>(null);
     const [isSearchTypeDropdownOpen, setSearchTypeDropdownOpen] = useState(false);
-    const [isFilterDropdownOpen, setFilterDropdownOpen] = useState(false);
-    const [currSearchType, setCurrSearchType] = useState<string>(initialState.search?.type || 'playerName');
-    const [selectedFilters, setSelectedFilters] = useState<string[]>(initialState.filters);
+    const [currSearchType, setCurrSearchType] = useState<string>(initialState.search?.type || 'actionId');
     const [hasSearchText, setHasSearchText] = useState(!!initialState.search?.value);
+    const [typeFilter, setTypeFilter] = useState(initialState.filterbyType ?? SEARCH_ANY_STRING);
+    const [adminNameFilter, setAdminNameFilter] = useState(initialState.filterbyAdmin ?? SEARCH_ANY_STRING);
 
     const updateSearch = () => {
         if (!inputRef.current) return;
         const searchValue = inputRef.current.value.trim();
+        const effectiveTypeFilter = typeFilter !== SEARCH_ANY_STRING ? typeFilter : undefined;
+        const effectiveAdminNameFilter = adminNameFilter !== SEARCH_ANY_STRING ? adminNameFilter : undefined;
         if (searchValue.length) {
-            doSearch({ value: searchValue, type: currSearchType }, selectedFilters);
+            doSearch(
+                { value: searchValue, type: currSearchType },
+                effectiveTypeFilter,
+                effectiveAdminNameFilter,
+            );
         } else {
-            doSearch(null, selectedFilters);
+            doSearch(
+                null,
+                effectiveTypeFilter,
+                effectiveAdminNameFilter,
+            );
         }
     }
 
     //Call onSearch when params change
     useEffect(() => {
         updateSearch();
-    }, [currSearchType, selectedFilters]);
+    }, [currSearchType, typeFilter, adminNameFilter]);
 
     //Input handlers
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -118,14 +135,6 @@ export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps
         setHasSearchText(false);
     };
 
-    const filterSelectChange = (filter: string, checked: boolean) => {
-        if (checked) {
-            setSelectedFilters((prev) => [...prev, filter]);
-        } else {
-            setSelectedFilters((prev) => prev.filter((f) => f !== filter));
-        }
-    }
-
     //Search hotkey
     useEventListener('keydown', (e: KeyboardEvent) => {
         if (e.code === 'KeyF' && (e.ctrlKey || e.metaKey)) {
@@ -137,9 +146,13 @@ export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps
     //It's render time! 🎉
     const selectedSearchType = availableSearchTypes.find((type) => type.value === currSearchType);
     if (!selectedSearchType) throw new Error(`Invalid search type: ${currSearchType}`);
-    const filterBtnMessage = selectedFilters.length
-        ? `${selectedFilters.length} Filter${selectedFilters.length > 1 ? 's' : ''}`
-        : 'No filters';
+    if (!authData) throw new Error(`authData is not available`);
+    const filteredAdmins = useMemo(() => {
+        return adminStats.filter((admin) => admin.name !== authData.name)
+    }, [adminStats, authData.name]);
+    const selfActionCount = useMemo(() => {
+        return adminStats.find((admin) => admin.name === authData.name)?.actions || 0;
+    }, [adminStats, authData.name]);
     return (
         <div className="p-4 mb-2 md:mb-4 md:rounded-xl border border-border bg-card text-card-foreground shadow-sm">
             <div className="flex flex-wrap-reverse gap-2">
@@ -175,13 +188,13 @@ export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps
                                 role="combobox"
                                 aria-expanded={isSearchTypeDropdownOpen}
                                 onClick={() => setSearchTypeDropdownOpen(!isSearchTypeDropdownOpen)}
-                                className="xs:w-40 justify-between border-input bg-black/5 dark:bg-black/30 hover:dark:bg-primary grow md:grow-0"
+                                className="xs:w-48 justify-between border-input bg-black/5 dark:bg-black/30 hover:dark:bg-primary grow md:grow-0"
                             >
                                 Search by {selectedSearchType.label}
                                 <ChevronsUpDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className='w-40'>
+                        <DropdownMenuContent className='w-48'>
                             <DropdownMenuLabel>Search Type</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuRadioGroup value={currSearchType} onValueChange={setCurrSearchType}>
@@ -198,49 +211,53 @@ export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps
                         </DropdownMenuContent>
                     </DropdownMenu>
 
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="outline"
-                                role="combobox"
-                                aria-expanded={isFilterDropdownOpen}
-                                onClick={() => setFilterDropdownOpen(!isFilterDropdownOpen)}
-                                className="xs:w-44 justify-between border-input bg-black/5 dark:bg-black/30 hover:dark:bg-primary grow md:grow-0"
-                            >
-                                {filterBtnMessage}
-                                <ChevronsUpDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className='w-44'>
-                            <DropdownMenuLabel>Search Filters</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {availableFilters.map((filter) => (
-                                <DropdownMenuCheckboxItem
-                                    key={filter.value}
-                                    checked={selectedFilters.includes(filter.value)}
-                                    className="cursor-pointer"
-                                    onCheckedChange={(checked) => {
-                                        filterSelectChange(filter.value, checked);
-                                    }}
 
+                    <Select defaultValue={typeFilter} onValueChange={setTypeFilter}>
+                        <SelectTrigger className="w-36 grow md:grow-0" >
+                            <SelectValue placeholder="Filter by admin" />
+                        </SelectTrigger>
+                        <SelectContent className="px-0">
+                            <SelectItem value={SEARCH_ANY_STRING} className="cursor-pointer">
+                                Any type
+                            </SelectItem>
+                            <SelectSeparator />
+                            <SelectItem value={'ban'} className="cursor-pointer">
+                                Bans
+                            </SelectItem>
+                            <SelectItem value={'warn'} className="cursor-pointer">
+                                Warns
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Select defaultValue={adminNameFilter} onValueChange={setAdminNameFilter}>
+                        <SelectTrigger className="w-36 grow md:grow-0" >
+                            <SelectValue placeholder="Filter by admin" />
+                        </SelectTrigger>
+                        <SelectContent className="px-0">
+                            <SelectItem value={SEARCH_ANY_STRING} className="cursor-pointer">
+                                By any admin
+                            </SelectItem>
+                            <SelectItem value={authData.name} className="cursor-pointer">
+                                {authData.name} <span className="opacity-50">({selfActionCount})</span>
+                            </SelectItem>
+
+                            <SelectSeparator />
+                            {filteredAdmins.map((admin) => (
+                                <SelectItem
+                                    className="cursor-pointer"
+                                    key={admin.name}
+                                    value={admin.name}
                                 >
-                                    {filter.label}
-                                </DropdownMenuCheckboxItem>
+                                    {admin.name} <span className="opacity-50">({admin.actions})</span>
+                                </SelectItem>
                             ))}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                className="cursor-pointer"
-                                onClick={() => setSelectedFilters([])}
-                            >
-                                <FilterXIcon className="mr-2 h-4 w-4" />
-                                Clear Filters
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        </SelectContent>
+                    </Select>
 
                     <div className="flex justify-end flex-grow">
                         <DropdownMenu>
-                            <DropdownMenuTrigger className="">
+                            <DropdownMenuTrigger asChild>
                                 <Button variant="outline" className="grow md:grow-0">
                                     More
                                     <ChevronDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -256,7 +273,7 @@ export function PlayerSearchBox({ doSearch, initialState }: PlayerSearchBoxProps
                                 <DropdownMenuItem className="h-10 pl-1 pr-2 py-2" asChild>
                                     <Link href="/system/master-actions#cleandb" className="cursor-pointer">
                                         <ExternalLinkIcon className="inline mr-1 h-4" />
-                                        Prune Players/HWIDs
+                                        Bulk Remove
                                     </Link>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>

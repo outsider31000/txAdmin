@@ -27,12 +27,17 @@
         - Legacy Ban -> old players page
         - prune players/hwids (from master actions -> clean database)
 - [x] open master actions in the correct tab
-- [ ] NEW PAGE: History
-- [ ] Add StatisticsManager tracking for players/actions search duration (QuantileArray)
-- [ ] fix disallowed intents message
-
-> ????
-- [ ] rtl issue
+- [x] NEW PAGE: History
+- [x] Create modal for history actions with full details
+    - [x] finish up modal info tab
+    - [x] try to add player name to title
+    - [x] fix modal padding (good enough)
+    - [x] modify HistoryTab -> HistoryItem to open the action modal on item click, remove revoke/perms logic
+- [x] fix(console): remove extra line break on term.write
+- [x] Migrate `/database/` routes to `/history` (update panel, nui, web!)
+- [x] Add StatisticsManager tracking for players/actions search duration (QuantileArray)
+- [x] fix disallowed intents message
+- [x] fix(console): implemented hacky patch to rtl issue
 
 
 ## Client game print issue
@@ -42,98 +47,14 @@ https://github.com/citizenfx/fivem/commit/84f724ed04d07e0b3a765601ad19ce54412f13
 
 =======================================================================
 
-export type DatabaseActionType = {
-id: string;
-type: 'ban' | 'warn';
-    ids: string[];
-    hwids?: string[]; //used only in bans
-playerName: string | false;
-    reason: string;
-author: string;
-timestamp: number;
-    expiration: number | false;
-    revocation: {
-        timestamp: number | null;
-        author: string | null;
-    };
-};
-
-
-### Page Changes:
-Tabela mínima:
-- [ban/warn] ID (expired/revoked)
-- playername
-- reason
-- author
-- timestamp
-
-Dados pra tabela:
-- id
-- type
-- playerName
-- playerLicense?
-- reason
-- author
-- ts: log.timestamp,
-- exp: log.expiration ? log.expiration : undefined,
-- revokedBy: log.revocation.author ? log.revocation.author : undefined,
-- revokedAt: log.revocation.timestamp ? log.revocation.timestamp : undefined,
-
-
-Modal title: [BAN] BXXX-XXX
-- info tab
-    - date
-    - author
-    - player (name or link?)
-    - STATUS
-        - WARN
-            - active: --
-            - revoked: revoked by XXX at YYY
-        - BAN
-            - active perma: permanent ban
-            - active temp: expires in XXX
-            - revoked: revoked by XXX at YYY
-            - expired: expired on XXX
-    - reason
-- IDs tab (same from players)
-- Edit tab
-    - for non-expired, non-revoked bans:
-        - same input as ban players modal
-        - button to "expire now"
-    - for non-viewed, non-revoked, offline warns
-        - change the reason
-
-- Actions: revoke, remove (tbd)
-
+### Action Modal:
 - feat requests:
-    - be able to delete bans/warns (new permission)
-    - offline warning (show when rejoin and IS_PED_WALKING)
+    - be able to delete bans/warns with new permission (Issue #910)
+    - offline warning - show when rejoin and IS_PED_WALKING, requires showing when it happened to the player (Issue #522)
     - top server asked for the option to edit ban duration (expire now / change)
     - Thought: offline warns need a prop to mark if they have been checked, instead of bool, could be an int for "viewed" and also count up for every join blocked on banned players
     - Thought: need to add an edit log like the one we have for player notes
-
-
-
-- Stats:
-    - Total Warns
-    - New Warns This Week
-    - Total Bans
-    - New Bans This Week
-- Search type:
-    - ID
-    - Identifiers
-    - Reason
-- Action type: (both pre selected?)
-    - warn
-    - ban
-- Author:
-    - searchable list of admins
-    - "self" is the first option
-    - hotlink it from the admins page (#author-xxxxxxx)
-- Dropdown
-    - bulk remove -> master actions
-
-
+    - Thought: maybe we could use some dedicated icons for Expired, Edited, Revoked
 
 
 #### Whitelist:
@@ -303,6 +224,13 @@ Master Actions:
 - clean database - "bulk changes" button at the players page
 - revoke whitelists - button to whitelist pages
 
+Admin manager:
+- stats on admins
+    - total count of bans/warns
+    - counts of bans/warns in the last 7, 14, 28d
+    - revocation %
+    - bans/warns %
+
 
 =======================================================================
 
@@ -317,6 +245,7 @@ Master Actions:
     - settings with select box for which options to choose (bans, warns, dms, kicks, restarts, announcements, everything)
 
 - [ ] create new "Remove Player Data" permission which would allow to delete bans/warns, players and player identifiers
+    - Ref: https://github.com/tabarra/txAdmin/issues/751
 
 - [ ] maybe use [this lib](https://www.npmjs.com/package/ntp-time-sync) to check for clock skew so I can remove the complexity of dealing with possible desync between core and ui on player modal, scheduler, etc;
     - even better: clients2.google.com/time/1/current
@@ -501,13 +430,11 @@ teste:
     apertar f1 e ver se aparece a mensagem de perms
 
 # TODO: sooner than later
-- [ ] Add a tracking for % of redm/fivem/libertym servers to txTracker
 - [ ] maybe add some debug logging to `AdminVault.checkAdminsFile()`, to find out why so many people are having issues with their logins
     - maybe even add to the login failed page something like "admin file was reset or modified XXX time ago"
 - [ ] server logger add events/min average
 - [ ] no duplicated id type in bans? preparing for the new db migration
 - [ ] `cfg cyclical 'exec' command detected to file` should be blocking instead of warning. Beware that this is not trivial without also turning missing exec target read error also being error
-- [ ] maybe some sort of lockfile to admins.json file which would disable admin manager?
 
 
 
@@ -733,18 +660,6 @@ This is not compatible with the update events.
 If patch, show update notification immediately (especially important to quick-fix a bug).
 If minor, randomize a delay between 0~24h.
 If patch, randomize a delay 0~72h.
-
-Update event idea (not yet greenlit):
-- A box similar to the fxserver update one;
-- The major/minor updates will have a discord stage event, patches won't;
-- Will get the next event date + type (major/minor) through some api (maybe a regex-able string in the GH releases page);
-- The pre-event notifications will have a live "in xx time" type countdown
-- 2 days before it will show a yellow warning;
-- 1 hour before it will become a glowing green box;
-- 1 hour after the event start it will become a red update box with generic message, or blue if it's just a patch;
-- Note: regarding the changelog part, bubble asked me to ignore for now (may/13) but will talk again somewhen;
-
-
 
 ### TP:
 https://freesound.org/search/?q=teleport&page=6#sound

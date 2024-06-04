@@ -1,52 +1,99 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import TxAnchor from '@/components/TxAnchor';
-import { cn, convertRowDateTime, msToShortDuration } from '@/lib/utils';
+import { cn, convertRowDateTime } from '@/lib/utils';
 import { TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2Icon, ShieldCheckIcon, ActivitySquareIcon, FileTextIcon } from 'lucide-react';
-import { useOpenPlayerModal } from "@/hooks/playerModal";
-import { PlayersTableSearchResp, PlayersTableFiltersType, PlayersTableSearchType, PlayersTableSortingType, PlayersTablePlayerType } from '@shared/playerApiTypes';
+import { Loader2Icon, GavelIcon, AlertTriangleIcon, Undo2Icon, TimerOffIcon, TimerIcon } from 'lucide-react';
 import { useBackendApi } from '@/hooks/fetch';
+import { HistoryTableActionType, HistoryTableSearchResp, HistoryTableSearchType, HistoryTableSortingType } from '@shared/historyApiTypes';
+import { useOpenActionModal } from '@/hooks/actionModal';
 
 
 /**
- * Player row
+ * Action row
  */
-type PlayerRowProps = {
-    rowData: PlayersTablePlayerType;
-    modalOpener: ReturnType<typeof useOpenPlayerModal>;
+type HistoryRowProps = {
+    action: HistoryTableActionType;
+    modalOpener: ReturnType<typeof useOpenActionModal>;
 }
 
-function PlayerRow({ rowData, modalOpener }: PlayerRowProps) {
+function HistoryRow({ action, modalOpener }: HistoryRowProps) {
     const openModal = () => {
-        modalOpener({ license: rowData.license });
+        modalOpener(action.id);
+    }
+
+    // Type indicator
+    let rowPrefix: React.ReactNode;
+    let rowId: React.ReactNode;
+    if (action.type === 'warn') {
+        rowPrefix = <div className='flex items-center px-1 bg-warning-hint text-warning'>
+            <AlertTriangleIcon className='size-5' />
+        </div>
+        rowId = <span className='tracking-wider text-warning'>{action.id}</span>
+    } else if (action.type === 'ban') {
+        rowPrefix = <div className='flex items-center px-1 bg-destructive-hint text-destructive'>
+            <GavelIcon className='size-5' />
+        </div>
+        rowId = <span className='tracking-wider text-destructive'>{action.id}</span>
+    } else {
+        throw new Error(`Invalid action type: ${action.type}`);
+    }
+
+    //Status indicator
+    let statusIcon: React.ReactNode;
+    if (action.isRevoked) {
+        statusIcon = <Undo2Icon className='size-4' />;
+    } else if (action.banExpiration) {
+        if (action.banExpiration === 'permanent') {
+            statusIcon = <TimerOffIcon className='size-4' />;
+        } else if (action.banExpiration === 'active') {
+            statusIcon = <TimerIcon className='size-4' />;
+        }
     }
 
     return (
         <TableRow onClick={openModal} className='cursor-pointer'>
-            <TableCell className={'px-4 py-2 flex justify-between border-r'}>
-                <span className='text-ellipsis overflow-hidden line-clamp-1 break-all'>
-                    {rowData.displayName}
-                </span>
-                <div className='hidden md:inline-flex items-center gap-1'>
-                    <ActivitySquareIcon className={cn('h-5',
-                        rowData.isOnline ? 'text-success-inline animate-pulse' : 'text-muted'
-                    )} />
-                    <ShieldCheckIcon className={cn('h-5',
-                        rowData.isAdmin ? 'text-warning-inline' : 'text-muted'
-                    )} />
-                    <FileTextIcon className={cn('h-5',
-                        rowData.notes ? 'text-secondary-foreground' : 'text-muted'
-                    )} />
+            <TableCell className={cn(
+                'w-[10.4rem] border-r p-0',
+                action.isRevoked && 'opacity-40'
+            )}>
+                <div className='flex justify-start gap-2'>
+                    {rowPrefix}
+                    <div className='p-2 font-mono'>
+                        {rowId}
+                    </div>
+                    <div className='flex-grow flex justify-end items-center my-auto pr-2 text-muted-foreground'>
+                        {statusIcon}
+                    </div>
                 </div>
             </TableCell>
-            <TableCell className='min-w-[8rem] px-4 py-2 border-r'>{msToShortDuration(rowData.playTime * 60_000)}</TableCell>
-            <TableCell className='min-w-[10rem] px-4 py-2 border-r'>{convertRowDateTime(rowData.tsJoined)}</TableCell>
-            <TableCell className='min-w-[10rem] px-4 py-2'>{convertRowDateTime(rowData.tsLastConnection)}</TableCell>
+            <TableCell className='px-4 py-2 border-r'>
+                <span className='text-ellipsis overflow-hidden line-clamp-1 break-all'>
+                    {action.playerName ? action.playerName : (
+                        <span className='text-muted-foreground italic'>unknown</span>
+                    )}
+                </span>
+            </TableCell>
+            <TableCell className='px-4 py-2 border-r'>
+                <span className='text-ellipsis overflow-hidden line-clamp-1 break-all'>
+                    {action.reason}
+                </span>
+            </TableCell>
+            <TableCell className='px-4 py-2 border-r'>
+                <span className='text-ellipsis overflow-hidden line-clamp-1 break-all'>
+                    {action.author}
+                </span>
+            </TableCell>
+            <TableCell className='min-w-[10rem] px-4 py-2'>
+                <span className='text-ellipsis overflow-hidden line-clamp-1 break-all'>
+                    {convertRowDateTime(action.timestamp)}
+                </span>
+            </TableCell>
         </TableRow>
     )
 }
+
 
 /**
  * Last row
@@ -70,7 +117,7 @@ function LastRow({ playersCount, hasReachedEnd, isFetching, loadError, retryFetc
         </>
     } else if (hasReachedEnd) {
         content = <span className='font-bold text-muted-foreground'>
-            {playersCount ? 'You have reached the end of the list.' : 'No players found.'}
+            {playersCount ? 'You have reached the end of the list.' : 'No actions found.'}
         </span>
     } else {
         content = <span>
@@ -81,7 +128,7 @@ function LastRow({ playersCount, hasReachedEnd, isFetching, loadError, retryFetc
 
     return (
         <TableRow>
-            <TableCell colSpan={4} className='px-4 py-2 text-center'>
+            <TableCell colSpan={5} className='px-4 py-2 text-center'>
                 {content}
             </TableCell>
         </TableRow>
@@ -94,9 +141,9 @@ function LastRow({ playersCount, hasReachedEnd, isFetching, loadError, retryFetc
  */
 type SortableTableHeaderProps = {
     label: string;
-    sortKey: 'playTime' | 'tsJoined' | 'tsLastConnection';
-    sortingState: PlayersTableSortingType;
-    setSorting: (newState: PlayersTableSortingType) => void;
+    sortKey: 'timestamp';
+    sortingState: HistoryTableSortingType;
+    setSorting: (newState: HistoryTableSortingType) => void;
     className?: string;
 }
 
@@ -126,28 +173,40 @@ function SortableTableHeader({ label, sortKey, sortingState, setSorting, classNa
     )
 }
 
-
-/**
- * Players table
- */
-type PlayersTableProps = {
-    search: PlayersTableSearchType;
-    filters: PlayersTableFiltersType;
+function NonSortableTableHeader({ label, className }: { label: string, className?: string }) {
+    return (
+        <th className={cn(
+            'py-2 px-4 font-light tracking-wider text-left text-muted-foreground',
+            className,
+        )} >
+            {label}
+        </th>
+    )
 }
 
-export default function PlayersTable({ search, filters }: PlayersTableProps) {
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [players, setPlayers] = useState<PlayersTablePlayerType[]>([]);
-    const [hasReachedEnd, setHasReachedEnd] = useState(false);
-    const [isFetching, setIsFetching] = useState(true);
-    const [loadError, setLoadError] = useState<string | null>(null);
-    const [sorting, setSorting] = useState<PlayersTableSortingType>({ key: 'tsJoined', desc: true });
-    const [isResetting, setIsResetting] = useState(false);
-    const openPlayerModal = useOpenPlayerModal();
 
-    const playerListingApi = useBackendApi<PlayersTableSearchResp>({
+/**
+ * History table
+ */
+type HistoryTableProps = {
+    search: HistoryTableSearchType;
+    filterbyType: string | undefined,
+    filterbyAdmin: string | undefined,
+}
+
+export default function HistoryTable({ search, filterbyType, filterbyAdmin }: HistoryTableProps) {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [history, setHistory] = useState<HistoryTableActionType[]>([]);
+    const [hasReachedEnd, setHasReachedEnd] = useState(false);
+    const [isFetching, setIsFetching] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [sorting, setSorting] = useState<HistoryTableSortingType>({ key: 'timestamp', desc: true });
+    const [isResetting, setIsResetting] = useState(false);
+    const openActionModal = useOpenActionModal();
+
+    const historyListingApi = useBackendApi<HistoryTableSearchResp>({
         method: 'GET',
-        path: '/player/search',
+        path: '/history/search',
         abortOnUnmount: true,
     });
 
@@ -160,7 +219,7 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
         const handleError = (error: string) => {
             setLoadError(error);
             if (resetOffset) {
-                setPlayers([]);
+                setHistory([]);
             }
         }
         try {
@@ -172,14 +231,17 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
                 queryParams.searchValue = search.value;
                 queryParams.searchType = search.type;
             }
-            if (filters.length) {
-                queryParams.filters = filters.join(',');
+            if (filterbyType && filterbyType !== '!any') {
+                queryParams.filterbyType = filterbyType;
             }
-            if (!resetOffset && players.length) {
-                queryParams.offsetParam = players[players.length - 1][sorting.key];
-                queryParams.offsetLicense = players[players.length - 1].license;
+            if (filterbyAdmin && filterbyAdmin !== '!any') {
+                queryParams.filterbyAdmin = filterbyAdmin;
             }
-            const resp = await playerListingApi({ queryParams });
+            if (!resetOffset && history.length) {
+                queryParams.offsetParam = history[history.length - 1][sorting.key];
+                queryParams.offsetActionId = history[history.length - 1].id;
+            }
+            const resp = await historyListingApi({ queryParams });
 
             //Dealing with errors
             if (resp === undefined) {
@@ -192,10 +254,10 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
             setLoadError(null);
             setHasReachedEnd(resp.hasReachedEnd);
             setIsResetting(false);
-            if (resp.players.length) {
-                setPlayers((prev) => resetOffset ? resp.players : [...prev, ...resp.players]);
+            if (resp.history.length) {
+                setHistory((prev) => resetOffset ? resp.history : [...prev, ...resp.history]);
             } else {
-                setPlayers([]);
+                setHistory([]);
             }
         } catch (error) {
             handleError(`Failed to fetch more data: ${(error as Error).message}`);
@@ -208,7 +270,7 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
     // The virtualizer
     const rowVirtualizer = useVirtualizer({
         scrollingDelay: 0,
-        count: players.length + 1,
+        count: history.length + 1,
         getScrollElement: () => (scrollRef.current as HTMLDivElement)?.getElementsByTagName('div')[0],
         estimateSize: () => 38, // border-b
         overscan: 25,
@@ -233,18 +295,18 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
 
     // Automagically fetch next page when reaching the end
     useEffect(() => {
-        if (!players.length || !virtualItems.length) return;
+        if (!history.length || !virtualItems.length) return;
         const lastVirtualItemIndex = virtualItems[virtualItems.length - 1].index;
-        if (players.length <= lastVirtualItemIndex && !hasReachedEnd && !isFetching) {
+        if (history.length <= lastVirtualItemIndex && !hasReachedEnd && !isFetching) {
             fetchNextPage()
         }
-    }, [players, virtualItems, hasReachedEnd, isFetching]);
+    }, [history, virtualItems, hasReachedEnd, isFetching]);
 
     //on state change, reset the list
     useEffect(() => {
         rowVirtualizer.scrollToIndex(0);
         fetchNextPage(true);
-    }, [search, filters, sorting]);
+    }, [search, filterbyType, filterbyAdmin, sorting]);
 
 
     return (
@@ -260,24 +322,13 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
                 <table className='w-full caption-bottom text-sm select-none'>
                     <TableHeader>
                         <tr className='sticky top-0 z-10 bg-zinc-200 dark:bg-muted text-secondary-foreground text-base shadow-md transition-colors'>
-                            <th className='py-2 px-4 font-light tracking-wider text-left text-muted-foreground'>
-                                Display Name
-                            </th>
+                            <NonSortableTableHeader label='Action' />
+                            <NonSortableTableHeader label='Player' />
+                            <NonSortableTableHeader label='Reason' />
+                            <NonSortableTableHeader label='Author' />
                             <SortableTableHeader
-                                label='Play Time'
-                                sortKey='playTime'
-                                sortingState={sorting}
-                                setSorting={setSorting}
-                            />
-                            <SortableTableHeader
-                                label='First Joined'
-                                sortKey='tsJoined'
-                                sortingState={sorting}
-                                setSorting={setSorting}
-                            />
-                            <SortableTableHeader
-                                label='Last Connection'
-                                sortKey='tsLastConnection'
+                                label='Date Time'
+                                sortKey='timestamp'
                                 sortingState={sorting}
                                 setSorting={setSorting}
                             />
@@ -286,21 +337,21 @@ export default function PlayersTable({ search, filters }: PlayersTableProps) {
                     <TableBody className={cn(isResetting && 'opacity-25')}>
                         {TopRowPad}
                         {virtualItems.map((virtualItem) => {
-                            const isLastRow = virtualItem.index > players.length - 1;
+                            const isLastRow = virtualItem.index > history.length - 1;
                             return isLastRow ? (
                                 <LastRow
                                     key={virtualItem.key}
-                                    playersCount={players.length}
+                                    playersCount={history.length}
                                     hasReachedEnd={hasReachedEnd}
                                     loadError={loadError}
                                     isFetching={isFetching}
                                     retryFetch={fetchNextPage}
                                 />
                             ) : (
-                                <PlayerRow
+                                <HistoryRow
                                     key={virtualItem.key}
-                                    rowData={players[virtualItem.index]}
-                                    modalOpener={openPlayerModal}
+                                    action={history[virtualItem.index]}
+                                    modalOpener={openActionModal}
                                 />
                             )
                         })}
